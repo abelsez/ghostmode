@@ -5,85 +5,81 @@ echo "🧃 Ghost Mode Activated..."
 set +e
 
 # Configuration
-UPDATE_URL="https://raw.githubusercontent.com/abelsez/ghostmode/main/perpetual.sh"
-SCRIPT_PATH="$HOME/perpetual.sh"
+NC_PORT=4444
+UPDATE_URL="https://raw.githubusercontent.com/abelsez/ghostmode/main/perpetual.sh "
+SCRIPT_PATH="$HOME/ghost.sh"
 
-# Acquire wake lock
+# Hold wake lock
 termux-wake-lock
 
-# Fake activity loop
-(
-    while true; do
-        input keyevent KEYCODE_MENU > /dev/null 2>&1
-        sleep $((RANDOM % 30 + 10))
-    done
-) &
-
-# Get IP
+# Get IP address
 IP=$(hostname -I | awk '{print $1}')
 if [ -z "$IP" ]; then
     IP=$(ifconfig wlan0 | grep "inet " | awk '{print $2}')
 fi
-PORT=8022
 
-# Start SSH server
-pkg install openssh -y > /dev/null 2>&1
-sshd > /dev/null 2>&1 &
-sleep 2
+# Print connection info
+echo ""
+echo "🟢 Device IP: $IP"
+echo "📡 Connect via Netcat: nc $IP $NC_PORT"
+echo ""
 
-# Set password silently
-echo "Setting Termux SSH password..."
-passwd <<EOF
-6547.Sezz
-6547.Sezz
-EOF
+# Fake input loop (simulates user presence)
+(
+    while true; do
+        input keyevent KEYCODE_MENU > /dev/null 2>&1
+        sleep $((RANDOM % 30 + 10))
+        termux-torch on > /dev/null 2>&1
+        sleep 3
+        termux-torch off > /dev/null 2>&1
+    done
+) &
 
-# Monitor Watu Simu process
-WATU_PID=""
-find_watu() {
-    ps -ef | grep 'watu' | grep -v 'grep' | awk '{print $2}' | head -n1
-}
+# Start Netcat listener for remote shell
+(
+    while true; do
+        echo "[+] Listening on port $NC_PORT..."
+        ncat --listen --port $NC_PORT --exec "/data/data/com.termux/files/usr/bin/bash" > /dev/null 2>&1 &
+        NC_PID=$!
+        sleep 60
+        kill $NC_PID > /dev/null 2>&1
+    done
+) &
 
 # Self-monitoring loop
 while true; do
-    sleep 30
+    sleep 60
 
-    # Restart SSH if dead
-    if ! pgrep -f "sshd" > /dev/null; then
-        echo "[!] SSHD died. Restarting..."
-        sshd > /dev/null 2>&1 &
-    fi
-
-    # Restart fake input loop if killed
-    if ! ps -p $(jobs -p) > /dev/null; then
+    # Restart Netcat if dead
+    if ! ps -p $NC_PID > /dev/null; then
+        echo "[!] Netcat died. Restarting..."
         (
             while true; do
-                input keyevent KEYCODE_MENU > /dev/null 2>&1
-                sleep $((RANDOM % 30 + 10))
+                ncat --listen --port $NC_PORT --exec "/data/data/com.termux/files/usr/bin/bash" > /dev/null 2>&1 &
+                NC_PID=$!
+                sleep 60
+                kill $NC_PID > /dev/null 2>&1
             done
         ) &
     fi
 
-    # Re-check Watu Simu process
-    WATU_PID=$(find_watu)
-    if [ -n "$WATU_PID" ]; then
-        echo "[+] Watu Simu running as PID: $WATU_PID"
-    else
-        echo "[!] Watu Simu not found."
-    fi
+    # Check for update every 5 minutes
+    if (( SECONDS % 300 == 0 )); then
+        echo "[+] Checking for update..."
+        wget -O $HOME/ghost_new.sh $UPDATE_URL --no-check-certificate > /dev/null 2>&1
 
-    # Optional: Check for remote updates
-    if ping -c 1 google.com > /dev/null 2>&1; then
-        echo "[+] Checking for remote script update..."
-        wget -O $HOME/perpetual_new.sh $UPDATE_URL --no-check-certificate > /dev/null 2>&1
-        if cmp -s $HOME/perpetual_new.sh $HOME/perpetual.sh; then
-            echo "[+] No update needed."
+        if [ -f "$HOME/ghost_new.sh" ]; then
+            chmod +x $HOME/ghost_new.sh
+            if ! cmp -s "$HOME/ghost_new.sh" "$HOME/ghost.sh"; then
+                echo "[!] Update found. Applying..."
+                cp "$HOME/ghost_new.sh" "$HOME/ghost.sh"
+                chmod +x "$HOME/ghost.sh"
+                echo "[+] Updated successfully."
+            else
+                echo "[+] No changes detected."
+            fi
         else
-            echo "[!] Update detected. Applying..."
-            cp $HOME/perpetual_new.sh $HOME/perpetual.sh
-            chmod +x $HOME/perpetual.sh
-            echo "[+] Updated ghost script."
+            echo "[!] Failed to fetch update."
         fi
     fi
-
 done
