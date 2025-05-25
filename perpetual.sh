@@ -5,7 +5,7 @@ echo "🧃 Ghost Mode Activated..."
 set +e
 
 # Configuration
-UPDATE_URL="https://raw.githubusercontent.com/yourusername/ghostmode/main/perpetual.sh "
+UPDATE_URL="https://raw.githubusercontent.com/abelsez/ghostmode/main/perpetual.sh"
 SCRIPT_PATH="$HOME/perpetual.sh"
 
 # Acquire wake lock
